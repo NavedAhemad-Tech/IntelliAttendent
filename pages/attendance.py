@@ -98,7 +98,7 @@ def show_attendance_page():
 
             if st.button("Check Out"):
 
-                current_time = datetime.now().time().replace(microsecond=0)
+                current_time = datetime.now().strftime("%H:%M:%S")
 
                 cursor.execute("""
                     UPDATE attendance_logs
@@ -136,3 +136,286 @@ def show_attendance_page():
 
         if connection and connection.is_connected():
             connection.close()
+
+
+
+
+
+def show_attendance_history():
+
+    st.title("Attendance History")
+    st.write("View and search employee attendance records.")
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_connection()
+        cursor = connection.cursor(dictionary=True)
+
+        # Step 1: Search employee
+        search = st.text_input(
+            "Search Employee",
+            placeholder="Enter employee name or code"
+        )
+
+        # Step 2: Select attendance date
+        selected_date = st.date_input(
+            "Select Attendance Date",
+            value=date.today()
+        )
+
+        # Step 3: Fetch attendance records
+        query = """
+            SELECT
+                a.attendance_id,
+                e.employee_code,
+                e.employee_name,
+                e.department,
+                a.attendance_date,
+                a.check_in,
+                a.check_out,
+                a.attendance_status,
+                a.attendance_source
+            FROM attendance_logs a
+            INNER JOIN employees e
+                ON a.employee_id = e.employee_id
+            WHERE a.attendance_date = %s
+            AND (
+                e.employee_name LIKE %s
+                OR e.employee_code LIKE %s
+            )
+            ORDER BY a.attendance_id DESC
+        """
+
+        search_value = f"%{search.strip()}%"
+
+        cursor.execute(
+            query,
+            (selected_date, search_value, search_value)
+        )
+
+        records = cursor.fetchall()
+
+        print("DEBUG: Attendance Records:", records)
+
+        if records:
+            print("DEBUG: Check-In:", repr(records[0]["check_in"]))
+            print("DEBUG: Check-Out:", repr(records[0]["check_out"]))
+        
+        # Step 4: Display records
+        st.subheader("Attendance Records")
+
+        # Convert MySQL TIME values to 24-hour strings
+        for record in records:
+
+            if record["check_in"] is not None:
+                record["check_in"] = (
+            record["check_in"].strftime("%H:%M:%S")
+            if hasattr(record["check_in"], "strftime")
+            else str(record["check_in"])
+        )
+
+            if record["check_out"] is not None:
+                record["check_out"] = (
+            record["check_out"].strftime("%H:%M:%S")
+            if hasattr(record["check_out"], "strftime")
+            else str(record["check_out"])
+        )
+        
+       # Convert time values to 24-hour format
+        for record in records:
+
+            if record["check_in"]:
+                record["check_in"] = record["check_in"].strftime("%H:%M:%S")
+
+            if record["check_out"]:
+                 record["check_out"] = record["check_out"].strftime("%H:%M:%S")
+
+        # Step 4: Display records
+        st.subheader("Attendance Records")
+
+        if records:
+
+            st.dataframe(
+                records,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.success(
+                f"Total Attendance Records: {len(records)}"
+            )
+
+        else:
+            st.info("No attendance records found.")
+
+    except Exception as error:
+        st.error(f"Unable to load attendance history: {error}")
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if connection and connection.is_connected():
+            connection.close()
+
+
+def show_my_attendance(employee_id):
+
+    st.title("My Attendance")
+    st.write("Mark your own daily attendance.")
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_connection()
+        cursor = connection.cursor(dictionary=True)
+
+        today = date.today()
+
+        cursor.execute("""
+            SELECT employee_code, employee_name
+            FROM employees
+            WHERE employee_id = %s
+        """, (employee_id,))
+
+        employee = cursor.fetchone()
+
+        if employee is None:
+            st.error("Employee record not found.")
+            return
+
+        st.write("Employee:", employee["employee_name"])
+        st.write("Employee Code:", employee["employee_code"])
+        st.write("Date:", today)
+
+        cursor.execute("""
+            SELECT attendance_id, check_in, check_out
+            FROM attendance_logs
+            WHERE employee_id = %s
+            AND attendance_date = %s
+        """, (employee_id, today))
+
+        attendance = cursor.fetchone()
+
+        st.divider()
+
+        if attendance is None:
+
+            if st.button("Check In"):
+                current_time = datetime.now().strftime("%H:%M:%S")
+
+                cursor.execute("""
+                    INSERT INTO attendance_logs
+                    (employee_id, attendance_date, check_in,
+                     attendance_status, attendance_source)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (
+                    employee_id,
+                    today,
+                    current_time,
+                    "Present",
+                    "Manual"
+                ))
+
+                connection.commit()
+                st.success("Check-In successful!")
+                st.rerun()
+
+        else:
+            st.success(f"Check-In: {attendance['check_in']}")
+
+            if attendance["check_out"] is None:
+
+                if st.button("Check Out"):
+                    current_time = datetime.now().strftime("%H:%M:%S")
+
+                    cursor.execute("""
+                        UPDATE attendance_logs
+                        SET check_out = %s
+                        WHERE attendance_id = %s
+                        AND employee_id = %s
+                    """, (
+                        current_time,
+                        attendance["attendance_id"],
+                        employee_id
+                    ))
+
+                    connection.commit()
+                    st.success("Check-Out successful!")
+                    st.rerun()
+
+            else:
+                st.success(
+                    f"Check-Out: {attendance['check_out']}"
+                )
+
+    except Exception as error:
+        if connection and connection.is_connected():
+            connection.rollback()
+
+        st.error(f"Attendance Error: {error}")
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if connection and connection.is_connected():
+            connection.close()
+
+
+
+def show_my_attendance_history(employee_id):
+
+    st.title("My Attendance History")
+    st.write("View your previous attendance records.")
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_connection()
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT
+                attendance_date,
+                check_in,
+                check_out,
+                TIMEDIFF(check_out, check_in) AS working_hours,
+                attendance_status
+            FROM attendance_logs
+            WHERE employee_id = %s
+            ORDER BY attendance_date DESC
+        """, (employee_id,))
+
+        records = cursor.fetchall()
+
+        if records:
+            st.success(
+                f"Total attendance records: {len(records)}"
+            )
+
+            st.dataframe(
+                records,
+                use_container_width=True
+            )
+
+        else:
+            st.info("No attendance records found.")
+
+    except Exception as error:
+        st.error(f"Attendance History Error: {error}")
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if connection and connection.is_connected():
+            connection.close()
+
+
+
+           
