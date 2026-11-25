@@ -141,6 +141,7 @@ def show_attendance_page():
 
 
 
+
 def show_attendance_history():
 
     st.title("Attendance History")
@@ -153,19 +154,16 @@ def show_attendance_history():
         connection = get_connection()
         cursor = connection.cursor(dictionary=True)
 
-        # Step 1: Search employee
         search = st.text_input(
             "Search Employee",
             placeholder="Enter employee name or code"
         )
 
-        # Step 2: Select attendance date
         selected_date = st.date_input(
             "Select Attendance Date",
             value=date.today()
         )
 
-        # Step 3: Fetch attendance records
         query = """
             SELECT
                 a.attendance_id,
@@ -197,49 +195,46 @@ def show_attendance_history():
 
         records = cursor.fetchall()
 
-        print("DEBUG: Attendance Records:", records)
+        # Convert time values explicitly to 24-hour strings
+        def format_time_24(value):
 
-        if records:
-            print("DEBUG: Check-In:", repr(records[0]["check_in"]))
-            print("DEBUG: Check-Out:", repr(records[0]["check_out"]))
-        
-        # Step 4: Display records
-        st.subheader("Attendance Records")
+            if value is None:
+                return ""
 
-        # Convert MySQL TIME values to 24-hour strings
+            if hasattr(value, "strftime"):
+                return value.strftime("%H:%M:%S")
+
+            if hasattr(value, "total_seconds"):
+                total = int(value.total_seconds())
+                hours, remainder = divmod(total, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+            value = str(value)
+
+            try:
+                return datetime.strptime(
+                    value, "%I:%M:%S %p"
+                ).strftime("%H:%M:%S")
+            except ValueError:
+                return value
+
         for record in records:
+            record["check_in"] = format_time_24(
+                record["check_in"]
+            )
 
-            if record["check_in"] is not None:
-                record["check_in"] = (
-            record["check_in"].strftime("%H:%M:%S")
-            if hasattr(record["check_in"], "strftime")
-            else str(record["check_in"])
-        )
+            record["check_out"] = format_time_24(
+                record["check_out"]
+            )
 
-            if record["check_out"] is not None:
-                record["check_out"] = (
-            record["check_out"].strftime("%H:%M:%S")
-            if hasattr(record["check_out"], "strftime")
-            else str(record["check_out"])
-        )
-        
-       # Convert time values to 24-hour format
-        for record in records:
-
-            if record["check_in"]:
-                record["check_in"] = record["check_in"].strftime("%H:%M:%S")
-
-            if record["check_out"]:
-                 record["check_out"] = record["check_out"].strftime("%H:%M:%S")
-
-        # Step 4: Display records
         st.subheader("Attendance Records")
 
         if records:
 
             st.dataframe(
                 records,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
@@ -259,6 +254,7 @@ def show_attendance_history():
 
         if connection and connection.is_connected():
             connection.close()
+
 
 
 def show_my_attendance(employee_id):
@@ -393,6 +389,12 @@ def show_my_attendance_history(employee_id):
 
         records = cursor.fetchall()
 
+        for record in records:
+            record["check_in"] = format_time_24(record["check_in"])
+            record["check_out"] = format_time_24(record["check_out"])
+            record["working_hours"] = format_time_24(record["working_hours"])
+        
+          
         if records:
             st.success(
                 f"Total attendance records: {len(records)}"
@@ -415,6 +417,25 @@ def show_my_attendance_history(employee_id):
 
         if connection and connection.is_connected():
             connection.close()
+
+
+def format_time_24(value):
+    if value is None:
+        return ""
+
+    if hasattr(value, "strftime"):
+        return value.strftime("%H:%M:%S")
+
+    if hasattr(value, "total_seconds"):
+        total = int(value.total_seconds())
+        hours, remainder = divmod(total, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    value = str(value)
+
+
+
 
 
 
